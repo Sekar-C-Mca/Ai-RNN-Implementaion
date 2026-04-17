@@ -1,15 +1,41 @@
 import streamlit as st
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import load_model
 import pandas as pd
 import pickle
 from pathlib import Path
+import h5py
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Load model
-model = load_model('model.h5')
+# Load model weights and run inference without TensorFlow runtime.
+def load_dense_weights(model_path: Path):
+    with h5py.File(model_path, 'r') as f:
+        w1 = f['model_weights/dense/sequential/dense/kernel'][()]
+        b1 = f['model_weights/dense/sequential/dense/bias'][()]
+        w2 = f['model_weights/dense_1/sequential/dense_1/kernel'][()]
+        b2 = f['model_weights/dense_1/sequential/dense_1/bias'][()]
+        w3 = f['model_weights/dense_2/sequential/dense_2/kernel'][()]
+        b3 = f['model_weights/dense_2/sequential/dense_2/bias'][()]
+    return (w1, b1, w2, b2, w3, b3)
+
+
+def relu(x: np.ndarray) -> np.ndarray:
+    return np.maximum(0, x)
+
+
+def sigmoid(x: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def predict_churn_proba(x: np.ndarray, weights) -> float:
+    w1, b1, w2, b2, w3, b3 = weights
+    h1 = relu(x @ w1 + b1)
+    h2 = relu(h1 @ w2 + b2)
+    out = sigmoid(h2 @ w3 + b3)
+    return float(out[0, 0])
+
+
+weights = load_dense_weights(BASE_DIR / 'model.h5')
 
 # Load encoders and scaler (UPDATED NAMES)
 with open('label_encoder_gender.pkl', 'rb') as file:
@@ -68,8 +94,7 @@ input_data = pd.concat([input_data.reset_index(drop=True), geo_encoded_df], axis
 input_data_scaled = scaler.transform(input_data)
 
 # Prediction
-prediction = model.predict(input_data_scaled)
-prediction_proba = prediction[0][0]
+prediction_proba = predict_churn_proba(input_data_scaled.astype(np.float32), weights)
 
 st.write(f'Churn Probability: {prediction_proba:.2f}')
 
